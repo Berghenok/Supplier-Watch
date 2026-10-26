@@ -1,4 +1,4 @@
-# Supplier Watch — Phase 9.5
+# Supplier Watch 
 
 This includes CRUD APIs, manual website checks, snapshots, deterministic change events with evidence, structured AI analysis, a transparent supplier risk status, a server-rendered dashboard, provider-neutral purchase history, an internal alert inbox, optional email delivery, and guided customer onboarding. CSV is the first purchase-data adapter. Website checks remain manual.
 
@@ -37,29 +37,6 @@ compose.yaml      local PostgreSQL and API
 Dockerfile        Python runtime for the API
 ```
 
-## Run locally with Docker
-
-Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) if needed, then start it. In PowerShell:
-
-```powershell
-cd C:\Users\bergh\supplier-watch
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-docker compose up --build -d
-docker compose ps
-```
-
-The sample password in `.env.example` is for local development only. Change `POSTGRES_PASSWORD` and the password inside `DATABASE_URL` in `.env` before using this beyond your own machine. `.env` is excluded from Git and the Docker build.
-
-Open <http://localhost:8000/dashboard> for the dashboard, or <http://localhost:8000/docs> for the API docs. Check the endpoints:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/health
-Invoke-RestMethod http://localhost:8000/health/db
-```
-
-Both should return `status: ok`. The API container waits for PostgreSQL and applies migrations on startup.
-
-The dashboard opens in Norwegian Bokmål. Use **NO / EN** at the top of any dashboard page to switch to English or back; the choice is saved in a browser cookie for one year. The switch applies to dashboard labels, guidance, forms, statuses, notices, and error messages. The translation catalog is in `app/i18n.py`. Supplier and product names, source evidence, stored AI text, CSV column names, API fields, and database values stay as recorded. API responses are unchanged.
 
 ## Use the dashboard
 
@@ -131,33 +108,6 @@ In `/docs`, create a company, supplier, and source as above, using the supplier'
 
 When a check returns `CHANGED`, `events_created` shows how many substantive text changes were saved. Use `GET /companies/{company_id}/suppliers/{supplier_id}/events` to see the events and their evidence. Each evidence record includes the previous and current text excerpts, the exact removed and added words, the source URL, and IDs of both full snapshots. Case-only, punctuation-only, and common update-date changes are filtered. The same local text change on the same URL is recorded once, even if the page later changes back and repeats it. A changed page can still have `events_created: 0` when only filtered noise changed.
 
-## Add your OpenAI API key
-
-In PowerShell, open the existing local `.env` file:
-
-```powershell
-cd C:\Users\bergh\supplier-watch
-notepad .env
-```
-
-Add these lines (replace the placeholder with your own key; do not share it in chat or commit `.env`):
-
-```dotenv
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-6-luna
-```
-
-Save the file, then recreate the API container so it receives the new environment variable:
-
-```powershell
-docker compose up -d --build api
-```
-
-The model defaults to `gpt-6-luna`, which supports structured outputs. A new substantive event is analyzed once when a check creates it. The check response shows `analyses_created` and `analyses_pending`. If the key is missing or the API response fails validation, the event and original evidence remain saved with `analysis: null`. The API does not invent a fallback analysis.
-
-To test one real event in <http://localhost:8000/docs>, use `GET /companies/{company_id}/suppliers/{supplier_id}/events` and choose an event produced by a genuine supplier webpage change. If its `analysis` is null, call `POST /companies/{company_id}/suppliers/{supplier_id}/events/{event_id}/analyze`. Then GET the event again to inspect the analysis beside its unchanged evidence. Calling analyze again returns the saved analysis without another OpenAI request. If there is no event yet, check a real source once for a baseline and again after its page genuinely changes.
-
-The AI receives only the changed excerpts, removed and added text, supplier name, and importance. It does not receive the full snapshots. Its interpretation is stored separately from factual evidence. Tests use mocked responses and never use your API key.
 
 ## Supplier risk status
 
@@ -182,21 +132,6 @@ Acquisition failures update source health only. They preserve the most recent su
 
 The `SourceAcquirer` interface in `app/acquisition.py` routes by source type and returns canonical text. The existing webpage adapter uses the safe HTTP fetcher. A future official API, feed, or authorized integration can register another adapter that produces stable canonical text and typed acquisition failures; snapshot hashing, change detection, evidence, AI analysis, and risk scoring continue through the same pipeline. No new provider connector is included here.
 
-## Run tests
-
-```powershell
-cd C:\Users\bergh\supplier-watch
-docker compose exec api pytest -q
-```
-
-The database test performs a real PostgreSQL query and checks the applied Alembic revision. To see logs or stop the app:
-
-```powershell
-docker compose logs api
-docker compose down
-```
-
-`docker compose down` keeps the database volume. `docker compose down -v` also deletes the local database data.
 
 ## New customer setup
 
@@ -214,17 +149,3 @@ A purchase-price increase can create an alert immediately after CSV import. Once
 
 Run the guided workflow tests with `docker compose exec -T api pytest -q tests/test_onboarding.py`.
 
-## Run Python outside Docker (optional)
-
-With Python 3.12 or newer installed, keep the PostgreSQL container running and use:
-
-```powershell
-cd C:\Users\bergh\supplier-watch
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-The `.env` file points this local Python process to PostgreSQL on `localhost:5432`. Stop the Compose API first (`docker compose stop api`) because both API processes otherwise use port 8000. Run `pytest -q` in the activated environment to test this mode.
